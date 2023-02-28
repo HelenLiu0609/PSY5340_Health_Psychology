@@ -1,0 +1,280 @@
+---
+Author: "Helen_Liu"
+Date: "28/2/2023"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+```
+
+#import and preprocess survey data
+
+```{r}
+df <- read.csv("health_survey.csv") %>%
+  dplyr::select(
+    ID = "编号",
+    Gender = starts_with("X1"),
+    #1 = male, 2 = female
+    Age = starts_with("X2"),
+    Edu = starts_with("X3"),
+    Hour_work = starts_with("X4"),
+    SES = starts_with("X5"),
+    Diet =  contains("饮食习惯"),
+    Exercise = contains("体育锻炼"),
+    Sleep = contains("睡眠习惯"),
+    Pressure = contains("压力管理"),
+    Alcohol = contains("饮酒"),
+    Smoke = contains("吸烟"),
+    Time = contains("时间不够"),
+    Motivation = contains("没有动力或意志力"),
+    Money = contains("成本或经济约束"),
+    Support = contains("缺乏社会支持"),
+    Knowlege = contains("知识或资源"),
+    Norm = contains("文化或社会规范")
+  ) %>%
+  mutate_at("Age", str_replace, "年", "") %>%
+  mutate_at("Age", as.numeric) %>%
+  mutate(age =
+           2023 - Age) %>%
+  dplyr::select(-Age) %>%
+  mutate(Gender = recode(Gender, "1" = "Male", "2" = "Female")) %>%
+  mutate_at(vars("ID", "Gender"), as.factor) %>%
+  mutate_at(vars("age", "Hour_work"), as.numeric) 
+```
+
+#plot health behaviors 
+
+```{r}
+df_plot <- df %>%
+  group_by(Gender) %>%
+  summarise(
+    p_Diet = sum(Diet, na.rm = TRUE) / n(),
+    p_Exercise = sum(Exercise, na.rm = TRUE) / n(),
+    p_Sleep = sum(Sleep, na.rm = TRUE) / n(),
+    p_Pressure = sum(Pressure, na.rm = TRUE) / n(),
+    p_Alcohol = sum(Alcohol, na.rm = TRUE) / n(),
+    p_Smoke = sum(Smoke, na.rm = TRUE) / n()
+  ) %>%
+  pivot_longer(cols = p_Diet:p_Smoke,
+               names_to = "behaviors",
+               values_to = "p_report")  %>%
+  mutate_at("behaviors", str_replace, "p_", "") %>%
+  mutate_at("behaviors", as.factor)
+
+df_plot$behaviors <- factor(
+  df_plot$behaviors,
+  levels = c("Diet", "Exercise", "Sleep", "Pressure", "Alcohol", "Smoke")
+)
+
+
+ggplot(df_plot,
+       aes(x = behaviors, y = p_report, fill = behaviors)) +
+  geom_bar(stat = "identity") +
+  facet_wrap( ~ Gender) +
+  # scale_y_continuous(
+  #   limits = c(0, 1))+
+  # # Accuracy of y-axis
+  scale_y_continuous(limits = c(0, 1),
+                     labels = scales::percent_format(accuracy = 1)) + #transfer y to percentage
+  geom_text(aes(label = scales::percent(round(p_report, 2))),
+            size = 3,
+            vjust = -1) +
+  theme_bw() +
+  labs(x = "Health Behavior", y = "Percentage of Respondent") +
+  scale_fill_brewer(palette = "Spectral") +
+  theme(
+    panel.border = element_blank(),
+    #remove border
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    strip.background = element_blank(),
+    legend.position = "none",
+    axis.text.y =  element_text(size = 10,
+                                angle = 0),
+    axis.text.x =  element_text(
+      size = 10,
+      angle = 40,
+      hjust = 1
+    ),
+    axis.line = element_line(size = 0.25)
+  )
+```
+
+#plot barriers 
+
+```{r}
+df_plot2 <- df %>%
+  group_by(Gender) %>%
+  summarise(
+    p_Time = sum(Time, na.rm = TRUE) / n(),
+    p_Motivation = sum(Motivation, na.rm = TRUE) / n(),
+    p_Money = sum(Money, na.rm = TRUE) / n(),
+    p_Support = sum(Support, na.rm = TRUE) / n(),
+    p_Knowlege = sum(Knowlege, na.rm = TRUE) / n(),
+    p_Norm = sum(Norm, na.rm = TRUE) / n()
+  ) %>%
+  pivot_longer(cols = p_Time:p_Norm,
+               names_to = "barriers",
+               values_to = "p_report")  %>%
+  mutate_at("barriers", str_replace, "p_", "") %>%
+  mutate_at("barriers", as.factor)
+
+
+df_plot2$barriers <- factor(
+  df_plot2$barriers,
+  levels = c("Time", "Motivation", "Money", "Support", "Knowlege", "Norm")
+)
+
+ggplot(df_plot2,
+       aes(x = barriers, y = p_report, fill = barriers)) +
+  geom_bar(stat = "identity") +
+  facet_wrap( ~ Gender) +
+  # scale_y_continuous(
+  #   limits = c(0, 1))+
+  # # Accuracy of y-axis
+  scale_y_continuous(limits = c(0, 1),
+                     labels = scales::percent_format(accuracy = 1)) + #transfer y to percentage
+  geom_text(aes(label = scales::percent(round(p_report, 2))),
+            size = 3,
+            vjust = -1) +
+  theme_bw() +
+  labs(x = "Perceived Barriers", y = "Percentage of Respondent") +
+  scale_fill_brewer(palette = "Spectral") +
+  theme(
+    panel.border = element_blank(),
+    #remove border
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    strip.background = element_blank(),
+    legend.position = "none",
+    axis.text.y =  element_text(size = 10,
+                                angle = 0),
+    axis.text.x =  element_text(
+      size = 10,
+      angle = 40,
+      hjust = 1
+    ),
+    axis.line = element_line(size = 0.25)
+  )
+```
+
+#correlational analysis
+
+```{r}
+#preprocess data
+df2 <- df %>%
+  drop_na(Hour_work) %>%
+  filter(SES >= 1 && SES <= 10) %>%
+  replace(., is.na(.), 0) %>% ##change all NA into 0
+  mutate(n_behavior = Diet +Exercise+Sleep + Pressure +Alcohol+Smoke,
+         n_barrier = Time + Motivation + Money + Support +Knowlege + Norm)
+```
+
+# Descriptive
+
+```{r}
+length(unique(df$ID))  #73 participants 
+#
+df %>%
+  group_by(Gender) %>%
+  summarise(n = n ())  #male 23, female 50
+#
+mean(df$age) #25.90
+sd(df$age) #5.64
+#
+mean(df2$Edu) #4.52
+sd(df2$Edu) #0.56
+#
+mean(df2$Hour_work) #7.45
+sd(df2$Hour_work) #2.77
+#
+mean(df2$SES) #5.38
+sd(df2$SES) #1.68
+
+```
+
+
+
+```{r}
+df_behavior <- df2 %>%
+  dplyr::select("Edu":"SES","age","n_behavior","n_barrier") 
+
+
+#correlation
+library(rstatix)
+library(corrplot)
+
+  df_behavior %>%
+  cor_mat() %>%
+  cor_mark_significant() 
+
+
+
+colnames(df_behavior) <- c("Education", "Working hours", "SES", "Age","N(Health Behaviors)","N(Barriers)")
+
+mydata.cor <- cor(df_behavior)
+testRes = cor.mtest(df_behavior, conf.level = 0.95)
+corrplot(
+  mydata.cor,
+  p.mat = testRes$p,
+  method = 'color',
+  diag = FALSE,
+  type = 'upper',
+  sig.level = c(0.001, 0.01, 0.05),
+  pch.cex = 0.9,
+  insig = 'label_sig',
+  pch.col = 'grey20',
+  order = 'AOE',
+  tl.col = "black" ) #TEXT COLOR
+```
+
+#Binary Logistic Regression
+
+Use binary logistic regression to understand how changes in the independent variables are associated with changes in the probability of an event occurring. This type of model requires a binary dependent variable. A binary variable has only two possible values, such as pass and fail.
+
+```{r}
+library(MASS)
+library(report)
+
+df3 <- df2 %>% dplyr::select(age,Edu,Hour_work,SES,Time) %>% 
+  mutate_at("Time",as.factor)
+  
+logit_1 <- glm(Time ~., 
+               family = binomial,
+               data = df3)
+
+#Analysis of Model Summary
+summary(logit_1)
+# stepwise model selection method
+logit_1_2 <- stepAIC(logit_1)
+
+#best model:Time ~ Hour_work
+logit_hourwork <- glm(Time ~ Hour_work, 
+               family = binomial,
+               data = df3)
+
+#Analysis of Model Summary
+summary(logit_hourwork)
+report(logit_hourwork)
+#
+df4 <- df2 %>% dplyr::select(age,Edu,Hour_work,SES,Motivation) %>% 
+  mutate_at("Motivation",as.factor)
+
+logit_2 <- glm(Motivation ~., 
+               family = binomial,
+               data = df4)
+summary(logit_2)
+
+logit_2_2 <- stepAIC(logit_2)
+
+logit_motivation <-  glm(Motivation ~ age + Hour_work, 
+               family = binomial,
+               data = df4)
+summary(logit_motivation)
+report(logit_motivation)
+
+```
+

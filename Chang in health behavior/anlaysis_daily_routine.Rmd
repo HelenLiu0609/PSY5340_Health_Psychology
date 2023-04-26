@@ -1,0 +1,145 @@
+---
+title: "R Notebook"
+output: html_document
+Author: "Helen Liu"
+---
+
+
+```{r}
+library(tidyverse)
+library(ggthemes)
+```
+
+
+```{r}
+df <- read_csv("Daily_walking_record.csv") %>%
+  filter(Week != "14") %>%
+  pivot_longer(
+    cols = Monday:Sunday,
+    names_to = "Days", 
+    values_to = "Steps"
+) %>%
+  mutate(Time = case_when(
+    Week == "4" ~ "Week 4-5",
+    Week == "5" ~ "Week 4-5",
+    Week == "6" ~ "Week 6-9",
+    Week == "7" ~ "Week 6-9",
+    Week == "8" ~ "Week 6-9",
+    Week == "9" ~ "Week 6-9",
+    Week == "10" ~ "Week 10-13",
+    Week == "11" ~ "Week 10-13",
+    Week == "12" ~ "Week 10-13",
+    Week == "13" ~"Week 10-13"
+  )) %>%
+  mutate_at(vars(Time,Week,Days), as.factor )
+```
+
+
+```{r}
+df$Time <- factor(df$Time, 
+                        levels = c("Week 4-5", "Week 6-9", "Week 10-13"))
+df$Days <- factor(df$Days, 
+                        levels = c("Monday", "Tuesday", "Wednesday","Thursday","Friday","Saturday","Sunday"))
+ggplot(data = df,
+       aes(
+         x = Days,
+         y = Steps,
+         group = Week,
+         color = Week
+       )) +
+  facet_wrap( ~ Time) +
+  geom_line(alpha = 0.55) +
+  geom_point(alpha = 0.5, size = 1) +
+  ggtitle("Daily Walking Steps of 13 Weeks") +
+  scale_y_continuous(expand = c(0, 0),
+                     limits = c(0, 20000)) +
+  theme_classic() +
+  stat_summary(
+    aes(y = Steps, group = 1),
+    fun.y = mean,
+    colour = "red",
+    size = 1,
+    geom = "line",
+    group = 1
+  ) +
+  theme(
+    axis.text.x =  element_text(
+      size = 10,
+      hjust = 1,
+      angle = 20
+    ),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    legend.position = "none",
+    axis.line = element_line(colour = "black"),
+    text = element_text(size = 14),
+    strip.background = element_blank()
+  )
+```
+
+#analysis
+
+```{r}
+df %>%
+  group_by(Time) %>%
+  summarise(mean_steps = mean(Steps),
+            sd_steps = sd(Steps))
+```
+
+# time series analysis 
+```{r}
+library(zoo)
+library(tseries)
+#prepare data 
+df_time <- df %>% mutate(
+  Day = seq(1,length(Steps))
+)
+set.seed(111)
+df_time$randdata <- round(rnorm(nrow(df_time),
+                                 mean = mean(df_time$Steps),
+                                             sd = 1000))
+df_time %>% 
+  select(Day,Steps,randdata) %>%
+pivot_longer(
+    cols = Steps:randdata,
+    names_to = "dataclass", 
+    values_to = "Step"
+) %>% ggplot(
+       aes(
+         x = Day,
+         y = Step
+       )) +
+  geom_line(aes(
+    color = dataclass,
+    linetype = dataclass
+  ))
+
+#Ljung-Box text 
+Box.test(df_time$Steps, type = "Ljung-Box")
+#p <.001 
+#平稳性
+adf.test(df_time$Steps)
+
+# #Dickey-Fuller = -3.0422, Lag order = 4, p-value = 0.1514
+# alternative hypothesis: stationary
+```
+
+
+```{r}
+# # ARMA model to predict 
+#  install.packages("remotes")
+#  remotes::install_github("robjhyndman/forecast")
+library(forecast)
+auto.arima(df_time$Steps)
+#ARIMA(1,0) AIC=1307.96
+ARMAmod<- arima(df_time$Steps,order= c(1,0,0))
+summary(ARMAmod)
+Box.test(ARMAmod$residuals, type = "Ljung-Box") #p = 0.8551 残差序列已是白噪声
+
+
+# prediction
+#ar(family = "STkaiti")
+plot(forecast(ARMAmod, h = 7))
+
+```
